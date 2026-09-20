@@ -24,14 +24,16 @@ class DistributionTests(unittest.TestCase):
         self.assertNotIn("#include <GoldRiskMath.mqh>", source)
         self.assertEqual(source.count("double GoldFixedVolume("), 1)
         self.assertEqual(source.count("bool GoldTargetHasRoom("), 1)
-        self.assertIn('#property version   "1.20"', source)
-        self.assertIn("GoldTrendSweep v1.20 initialized", source)
+        self.assertIn('#property version   "1.30"', source)
+        self.assertIn("GoldTrendSweep v1.30 initialized", source)
+        self.assertEqual(source.count("bool GoldBreakConfirmed("), 1)
+        self.assertNotIn("#include <GoldSignalMath.mqh>", source)
 
     def test_presets_match_declared_inputs_and_limits(self):
         source = (ROOT / "mt5/Experts/GoldTrendSweep.mq5").read_text()
         defaults = dict(re.findall(r"^input\s+\w+\s+(Inp\w+)\s*=([^;]+);", source, re.M))
         files = sorted((ROOT / "mt5/Presets").glob("*.set"))
-        self.assertEqual(len(files), 4)
+        self.assertEqual(len(files), 5)
         for path in files:
             with self.subTest(preset=path.name):
                 values = dict(defaults)
@@ -53,6 +55,10 @@ class DistributionTests(unittest.TestCase):
                 self.assertEqual(values["InpNewsMode"], "0")
                 self.assertEqual(values["InpTesterSkipCalendar"], "true")
                 self.assertEqual(values["InpDiagnostics"], "true")
+                self.assertEqual(values["InpSignalProfile"], "1" if "v130" in path.name else "0")
+                self.assertTrue(2 <= int(values["InpM15EMAPeriod"]) <= 200)
+                self.assertTrue(0 < float(values["InpBalancedZoneATR"]) <= 3)
+                self.assertTrue(0 < float(values["InpBalancedMinBodyATR"]) < float(values["InpMaxRangeATR"]))
                 if "Fixed005" in path.name:
                     self.assertEqual(values["InpLotMode"], "1")
                     self.assertEqual(float(values["InpFixedLots"]), .05)

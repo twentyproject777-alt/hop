@@ -1,14 +1,41 @@
 # GoldTrendSweep — EA MT5 untuk XAUUSD
 
-EA eksperimental: tren H1/M15, liquidity sweep M5, konfirmasi struktur dan RSI(8), entry retracement, TP awal **2R**, serta **break-even berbuffer biaya setelah mencapai 1R**. Bukan jaminan profit, win rate >50%, atau drawdown maksimal tertentu. Belum ada hasil backtest maupun forward test MT5.
+EA eksperimental: tren H1/M15, liquidity sweep M5, konfirmasi harga dan RSI(8), entry retracement, TP awal **2R**, serta **break-even berbuffer biaya setelah mencapai 1R**. Bukan jaminan profit, win rate >50%, atau drawdown maksimal tertentu. Screenshot pengguna menunjukkan v1.20 menghasilkan nol transaksi; v1.30 belum diuji melalui MT5 di workspace ini.
+
+## v1.30 — revisi sinyal berdasarkan Journal pengguna
+
+Journal v1.20 menunjukkan **1.666 bar dievaluasi, 479 aligned, 3 sweep, 1 structure break, dan 1 skip RR**, dengan skip biaya/sizing/margin semuanya 0. Artinya bottleneck run tersebut berada di pembentukan setup dan ruang target, **bukan penolakan lot atau margin**. Pesan di luar sesi pada akhir hari tidak menjelaskan seluruh run: 1.666 bar sudah lolos gate tersebut. Jam 08:00–18:00 server tetap dipertahankan, bukan diubah menjadi trading sembarang waktu.
+
+Karena itu v1.30 menyediakan profil **Balanced** sebagai default dan tetap mempertahankan **Strict** untuk perbandingan. Ini **perubahan definisi strategi**, bukan klaim bahwa aturan sebelumnya mengalami kegagalan eksekusi MT5.
+
+| Aturan | Strict (`InpSignalProfile=0`) | Balanced (`InpSignalProfile=1`, default baru) |
+| --- | --- | --- |
+| Arah H1 | Close vs EMA200 dan arah EMA | Sama |
+| Arah M15 | Dua pivot high/low sama-sama naik atau turun | Close vs EMA50 dan slope EMA50 selaras H1 |
+| Zona ekstrem/wick sweep M5 | Pivot support/resistance M15 ±0,5 ATR **M5** | EMA50 M15 ±1 ATR **M15** |
+| Likuiditas yang disapu | Pivot M5 yang sudah terkonfirmasi sebelum sweep | Sama, cukup pivot terbaru pada sisi yang disapu |
+| Konfirmasi sesudah sweep | Close menembus pivot minor berlawanan yang dibekukan saat sweep | Close melewati **high candle sweep untuk buy / low untuk sell**; ini konfirmasi lokal, bukan pivot BOS yang sama dengan Strict |
+| Body candle konfirmasi | Minimal 0,8 ATR M5 | Minimal 0,4 ATR M5 |
+| RSI8 | Buy >50 dan naik; sell <50 dan turun | Sama |
+| Entry limit | Midpoint body candle konfirmasi | Mulai midpoint; bila RR terhalang, coba retracement lebih dalam **di dalam range candle konfirmasi** |
+
+Balanced tetap menunggu candle tertutup, maksimal 3 candle konfirmasi, ekstrem sweep tidak boleh ditembus ulang, SL di luar sweep, TP minimal2R, expiry3 candle, biaya/margin/sizing/guard risiko, dan BE1R. **Tidak ada order dummy, entry setiap candle, martingale, atau market order paksa.**
+
+### Entry yang menyesuaikan ruang RR, bukan menurunkan target
+
+Pada Balanced, jika target2R dari midpoint terhalang pivot M15, EA menghitung harga limit lebih dalam agar target tetap2R sebelum penghalang. SL struktural tidak diubah. Harga entry harus tetap berada di range candle konfirmasi dan di sisi yang benar dari SL. Setiap perpindahan memeriksa ulang pivot terdekat karena pivot yang tadinya di belakang entry bisa menjadi penghalang baru. Pembulatan tick dan buffer spread tetap dihitung.
+
+Jika tidak ada entry yang memenuhi syarat dalam range tersebut, setup tetap dilewati. Lot, biaya dan margin dihitung ulang dari **entry akhir**; retracement lebih dalam bisa gagal filter biaya dan tidak otomatis menghasilkan transaksi. Limit order juga tetap harus tersentuh harga agar terisi. `RR_adjusted` menghitung kandidat yang lolos penyesuaian harga sebelum gate biaya/sizing, bukan jumlah fill.
+
+Gunakan **`500USD_v130_Balanced.set`** untuk pengujian baru. Semua preset lama kini menyetel `InpSignalProfile=0` secara eksplisit agar perbandingan Strict tidak diam-diam memakai aturan Balanced. Bandingkan keduanya pada periode/data/biaya yang sama, lalu uji Balanced di periode lain; jangan menganggap perubahan ini sudah meningkatkan win rate atau expectancy.
 
 ## Instalasi
 
-**v1.20: kedua file `.mq5` di `Experts` dan `Standalone` sudah satu file lengkap**, tidak lagi memerlukan `GoldRiskMath.mqh` di terminal. Tetap memerlukan Standard Library `Trade/Trade.mqh` bawaan MT5. Gunakan satu versi EA saja; timpa versi lama dan compile ulang, jangan menjalankan dua instance. Jangan menyimpan halaman HTML GitHub sebagai `.mq5`.
+**Kedua file `.mq5` v1.30 di `Experts` dan `Standalone` sudah satu file lengkap**, tidak memerlukan header custom di terminal. Tetap memerlukan Standard Library `Trade/Trade.mqh` bawaan MT5. Gunakan satu versi EA saja; timpa versi lama dan compile ulang, jangan menjalankan dua instance. Jangan menyimpan halaman HTML GitHub sebagai `.mq5`.
 
 1. MT5 → **File → Open Data Folder**.
 2. Salin `mt5/Experts/GoldTrendSweep.mq5` ke `MQL5/Experts/`.
-3. Tidak perlu menyalin header tambahan. `mt5/Include/GoldRiskMath.mqh` di repository hanya menjadi sumber modul untuk pengembangan dan tes; script build menanamkannya dalam kedua `.mq5`.
+3. Tidak perlu menyalin header tambahan. `mt5/Include/GoldRiskMath.mqh` dan `GoldSignalMath.mqh` di repository menjadi sumber modul untuk pengembangan dan tes; script build menanamkannya dalam kedua `.mq5`.
 4. Buka `.mq5` di MetaEditor, tekan **F7**. Pastikan tidak ada error maupun warning sebelum menguji.
 5. Jalankan dahulu di Strategy Tester, kemudian akun demo. Gunakan **XAUUSD M5**; nama simbol yang mengandung `XAU` atau `GOLD` didukung tanpa membedakan huruf besar/kecil. Periode chart lain tidak lagi menggagalkan startup, tetapi sinyal internal tetap **M5/M15/H1**, bukan berubah mengikuti chart.
 6. Sesuaikan komisi, jam server, dan mode berita sebelum mengaktifkan Algo Trading. Akun real **diblokir secara default** (`InpAllowRealTrading=false`).
@@ -19,18 +46,19 @@ Hanya satu instance untuk kombinasi akun/magic dalam terminal. Jangan menjalanka
 
 Versi sebelumnya memang menolak startup Strategy Tester jika mode kalender default dipakai. Selain itu, risiko 0,25% pada $500 hanya **$1,25**: banyak setup tidak bisa memenuhi minimum lot 0,01. Ini berbeda dari tidak adanya sinyal; memperbesar lot tidak menyelesaikan startup atau memastikan entry.
 
-1. Compile **versi v1.20**. Pilih EA yang baru dikompilasi dalam tester. Journal harus menampilkan **`GoldTrendSweep v1.20 initialized. SINGLE-FILE BUILD.`**; jika tidak, jangan menilai hasilnya sebagai versi terbaru.
+1. Compile **versi v1.30**. Pilih EA yang baru dikompilasi dalam tester. Journal harus menampilkan **`GoldTrendSweep v1.30 initialized. SINGLE-FILE BUILD. Profile=SIGNAL_BALANCED`** untuk profil baru; jika tidak, jangan menilai hasilnya sebagai versi terbaru/Balanced.
 2. Atur **deposit 500, currency USD, XAUUSD, M5**, dan **Every tick based on real ticks**. Gunakan leverage serta spesifikasi simbol broker tujuan, bukan leverage yang dinaikkan hanya agar lolos margin.
 3. Tab **Inputs → Reset**, lalu **Load** salah satu preset di `mt5/Presets/`. Preset hanya mengubah input EA, **tidak mengatur deposit, leverage, atau tanggal tester**. Input lain seperti komisi/jam server masih perlu disesuaikan.
 
 | Preset | Perilaku pada ekuitas awal $500 |
 | --- | --- |
-| `500USD_v120_AutoRisk2.set` | Baseline diagnostik terbaru: auto-lot dengan risiko maksimal **2% ($10)**, lot maksimal 0,10. Lebih agresif daripada preset 1%; tetap menolak SL yang terlalu mahal untuk minimum lot broker. |
+| `500USD_v130_Balanced.set` | Profil **Balanced baru**, auto-lot risiko maksimal **2% ($10)**, maksimum0,10 lot. Gunakan ini untuk menguji perubahan sinyal v1.30. |
+| `500USD_v120_AutoRisk2.set` | Pembanding **Strict**: auto-lot risiko maksimal **2% ($10)**, maksimum0,10 lot. |
 | `500USD_AutoRisk.set` | Pilihan awal yang lebih konservatif: risiko **1% ($5)**; lot dihitung dari SL dan biaya, maksimal 0,10. Bisa lebih kecil dari 0,05 atau skip jika min lot masih terlalu besar. |
 | `500USD_Fixed005_Capped.set` | Minta tepat **0,05 lot**, tetapi hanya entry jika risiko estimasi SL+biaya **≤2% ($10)** dan sisa budget cukup. |
 | `500USD_Fixed010_Capped.set` | Minta tepat **0,10 lot**, dengan batas risiko yang sama **≤2% ($10)**; lebih sering skip karena kebutuhan risikonya lebih besar. |
 
-Semua preset mempertahankan TP2R, BE1R, filter strategi, margin cap 20%, DD reduction/pause/hard 5/8/10%. Batas harian/mingguan adalah **3%/6%**, juga menjadi default kode v1.20. Risiko default kode kini **2%**, bukan 0,25%; ini perubahan risiko yang nyata, bukan hanya perbaikan teknis. Akun real tetap diblokir. Tidak ada klaim bahwa preset tersebut sudah menghasilkan entry/profit di tester.
+Semua preset mempertahankan TP2R, BE1R, margin cap20%, DD reduction/pause/hard5/8/10%. Batas harian/mingguan **3%/6%** dan risiko default kode **2%** tetap sama sejak v1.20. Risiko2% lebih agresif daripada default awal0,25%, bukan hanya perubahan teknis. Akun real tetap diblokir. Tidak ada klaim bahwa preset Balanced sudah menghasilkan entry/profit di tester.
 
 **Fixed lot bukan izin melewati batas risiko.** Mode `LOT_FIXED_CAPPED` tidak diam-diam menurunkan/menaikkan lot: broker min/max/step, budget, atau margin yang tidak cocok membuat setup dilewati dan alasannya dicetak. Setelah DD5%, budget dipotong separuh; fixed lot tetap sama dan hanya lolos jika cocok dengan budget yang lebih kecil. Tidak mempersempit SL struktural untuk memaksakan lot besar.
 
@@ -54,7 +82,7 @@ Versi sebelumnya membandingkan target terhadap pivot M15 terakhir tanpa mengecek
 
 Dengan `InpDiagnostics=true`, buka tab **Journal** Strategy Tester. EA mencetak konfigurasi awal, status kalender, lalu alasan seperti:
 
-- `Waiting: H1 EMA / M15 ...` → data belum cukup atau tren/struktur belum selaras.
+- `Waiting: H1/M15 history ... warming up` → data indikator belum siap; dipisahkan dari `H1 trend and M15 profile filter disagree` yang berarti arah tren belum selaras.
 - `Waiting: no liquidity sweep` / `sweep outside M15 zone` → belum ada setup yang memenuhi aturan.
 - `Skip: ... RSI8`, `... target RR`, `... cost fraction` → setup gagal filter; bukan kegagalan startup.
 - `Skip sizing: budget=..., minimum-lot loss=..., requested-fixed loss=...` → lot tidak sesuai budget/spesifikasi. Angka biaya dalam mata uang akun.
@@ -66,11 +94,12 @@ Dengan `InpDiagnostics=true`, buka tab **Journal** Strategy Tester. EA mencetak 
 Saat test berakhir (bukan optimasi), Journal juga mencetak ringkasan walaupun `InpDiagnostics=false`:
 
 ```text
-GTS v1.20 SUMMARY: evaluated_M5_bars=... aligned=... sweeps=... structure_breaks=... order_attempts=... accepted_pending=... filled_entry_orders=...
+GTS v1.30 SUMMARY: evaluated_M5_bars=... aligned=... sweeps=... structure_breaks=... order_attempts=... accepted_pending=... filled_entry_orders=...
 GTS SKIPS: price=... RR=... costs=... sizing=... margin=... expiry=...
+GTS SIGNALS: warmup=... trend_disagree=... raw_sweeps=... zone_rejected=... momentum_rejected=... expired_or_invalidated=... RR_adjusted=...
 ```
 
-`evaluated_M5_bars` menghitung candle yang sampai ke evaluasi strategi setelah gate sesi/berita/risiko, bukan seluruh candle tester. `structure_breaks` masih harus lolos RSI/body. `accepted_pending>0` dengan `filled_entry_orders=0` berarti order dibuat tetapi tidak terisi sebelum dibatalkan/kedaluwarsa; bukan sinyal yang gagal dikirim. Ringkasan dan `GTS COST/RISK CHECK` jauh lebih berguna untuk debugging dibanding laporan profit nol saja. Optimasi non-visual MT5 dapat menekan output `Print`; gunakan satu backtest normal untuk diagnosis.
+`evaluated_M5_bars` menghitung candle yang sampai ke evaluasi strategi setelah gate sesi/berita/risiko, bukan seluruh candle tester. `structure_breaks` menghitung konfirmasi sesuai profil dan masih harus lolos RSI/body. `raw_sweeps` belum difilter zona; `sweeps` sudah lolos zona. `expired_or_invalidated` menghitung setup aktif yang gagal pemeriksaan umur/arah/ekstrem pada candle berikutnya, bukan seluruh jenis pembatalan. `accepted_pending>0` dengan `filled_entry_orders=0` berarti order dibuat tetapi tidak terisi sebelum dibatalkan/kedaluwarsa. Ringkasan dan `GTS COST/RISK CHECK` lebih berguna untuk debugging daripada laporan profit nol saja. Optimasi non-visual MT5 dapat menekan `Print`; gunakan satu backtest normal.
 
 Jika tidak ada transaksi, kirim baris Journal mulai inisialisasi hingga beberapa alasan skip, nama simbol/broker, tanggal tes, leverage, dan preset. Tanpa log/tick broker, penyebab spesifik kasus pengguna belum dapat dipastikan. Jangan melonggarkan seluruh filter hanya untuk memunculkan trade.
 
@@ -112,7 +141,7 @@ Peak equity, baseline harian/mingguan, lock, dan pemicu BE disimpan dalam **Term
 - Lock DD 8%/10% tidak otomatis pulih. Setelah evaluasi, **flat-kan akun, hapus EA, dan catat statistik terlebih dahulu**. Reset state dengan menghapus Global Variables berprefix EA melalui F3 hanya jika sengaja memulai periode risiko baru. Jangan menghapus state untuk menyembunyikan drawdown. State terminal tidak berpindah otomatis ke VPS/terminal baru dan bisa kedaluwarsa setelah lama tidak dipakai.
 - Menghapus/reconfigure EA berupaya membatalkan pending, tetapi **tidak menutup posisi terbuka**. Posisi tersebut hanya memiliki SL/TP server sampai EA kembali aktif. Jangan mengandalkan pembatalan saat koneksi terputus.
 
-## Aturan entry yang benar-benar diimplementasikan
+## Aturan entry Strict (profil lama, untuk pembanding)
 
 1. **H1:** candle tertutup di atas EMA200 dan EMA meningkat dibanding 3 candle sebelumnya untuk buy; kebalikannya untuk sell.
 2. **M15:** dua pivot high dan dua pivot low terakhir sama-sama meningkat untuk buy, menurun untuk sell. Pivot default memerlukan 2 candle tertutup di setiap sisi; tidak memakai candle masa depan sebelum tersedia.
@@ -124,7 +153,7 @@ Peak equity, baseline harian/mingguan, lock, dan pemicu BE disimpan dalam **Term
 8. Pending kedaluwarsa setelah 3 candle M5 di **server broker**. Broker yang tidak mendukung expiration timestamp akan dilewati; tidak diturunkan menjadi GTC yang bisa terisi tanpa pengawasan.
 9. Tidak entry ketika range candle >3 ATR, estimasi spread + komisi + slippage >10% risiko harga, di luar sesi, saat blackout berita, atau guard risiko aktif. Pending juga dibatalkan saat kondisi biaya/risiko tidak lagi memenuhi syarat atau tren berubah.
 
-Filter ini sengaja ketat dan bisa menghasilkan **sedikit atau tidak ada transaksi** pada periode tertentu. Tidak ada FVG/order block/divergence subjektif. Parameter belum dioptimasi; nama “SMC/ICT” tidak membuktikan keunggulan statistik.
+Filter Strict ini sengaja ketat dan bisa menghasilkan **sedikit atau tidak ada transaksi**, seperti Journal pengguna. Aturan Balanced dijelaskan di bagian v1.30 di atas. Keduanya tidak memakai FVG/order block/divergence subjektif. Parameter belum dioptimasi; nama “SMC/ICT” tidak membuktikan keunggulan statistik.
 
 ## Pengaturan broker yang wajib diperiksa
 
@@ -177,6 +206,16 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
 Tambahan v1.20: regression test filter RR buy/sell, level belakang yang tidak boleh memblokir, pivot lebih tua di depan yang tetap harus memblokir, batas buffer target, serta perhitungan konflik biaya/risiko $500. Kedua `.mq5` diperiksa tidak memiliki dependency custom include dan modul tertanamnya identik dengan header yang dites. Pengujian ini belum membuktikan ada fill di data broker pengguna.
+
+Tambahan v1.30: modul sinyal yang **dipakai langsung EA** diuji dengan rangkaian kandidat buy/sell sintetis: arah EMA, sweep/reclaim, zona ATR, invalidasi ekstrem, konfirmasi lokal, RSI/body, penyesuaian retracement2R, deteksi penghalang baru setelah entry bergeser, batas range candle, biaya, dan sizing$500. Tes negatif menolak RSI salah, candle tanpa break, entry di luar range, serta angka invalid. Fixture ini bukan replay data broker atau bukti order terisi di MT5.
+
+```sh
+g++ -std=c++17 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined \
+  tests/signal_math_test.cpp -o /tmp/goldtrend-tests/signal_math_test
+/tmp/goldtrend-tests/signal_math_test
+```
+
+Verifikasi MT5 berikutnya: jalankan preset Balanced baru pada periode yang sama, pastikan banner profil, bandingkan `raw_sweeps`, `sweeps`, `momentum_rejected`, `RR_adjusted`, serta jumlah pending/fill dengan Strict. Periksa visual bahwa entry yang digeser tetap berada di candle konfirmasi, SL tetap di luar sweep, dan TP2R/BE1R sesuai fill aktual. Jangan menilai keberhasilan hanya dari bertambahnya jumlah transaksi.
 
 Uji manual MT5 yang masih wajib: default tester berhasil init dengan warning tanpa berita; toggle skip false menolak kalender; manual news tetap memblokir sesuai timestamp; input live trading tetap false di demo/real; preset fixed mengirim lot yang diminta hanya jika budget cocok. Mode chart M15 tetap memakai sinyal internal M5, bukan strategi entry M15 terpisah. **Belum diverifikasi melalui MT5 di workspace ini.**
 

@@ -11,9 +11,10 @@ MAIN = ROOT / "mt5/Experts/GoldTrendSweep.mq5"
 
 def render_main():
     source = MAIN.read_text()
-    header = (ROOT / "mt5/Include/GoldRiskMath.mqh").read_text()
+    header = "\n".join((ROOT / "mt5/Include" / name).read_text().rstrip()
+                       for name in ("GoldRiskMath.mqh", "GoldSignalMath.mqh"))
     marker = "#include <GoldRiskMath.mqh>"
-    block = "// BEGIN GENERATED RISK MODULE: edit Include/GoldRiskMath.mqh, then run scripts/build_standalone.py\n" + header.rstrip() + "\n// END GENERATED RISK MODULE"
+    block = "// BEGIN GENERATED RISK MODULE: edit Include/GoldRiskMath.mqh or GoldSignalMath.mqh, then run scripts/build_standalone.py\n" + header.rstrip() + "\n// END GENERATED RISK MODULE"
     if source.count(marker) == 1:
         return source.replace(marker, block)
     pattern = r"// BEGIN GENERATED RISK MODULE[^\n]*\n.*?// END GENERATED RISK MODULE"

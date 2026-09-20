@@ -1,5 +1,6 @@
 ; Start tester with deposit 500 USD. Baseline WITHOUT news, not a profitability preset.
 InpAllowRealTrading=false
+InpSignalProfile=0
 InpLotMode=0
 InpFixedLots=0.05
 InpRiskPercent=1.0

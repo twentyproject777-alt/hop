@@ -1,6 +1,7 @@
 ; Exact 0.05 lot only when estimated SL loss fits 2% equity AND remaining risk limits.
 ; Start tester with deposit 500 USD. Test only, not a live recommendation.
 InpAllowRealTrading=false
+InpSignalProfile=0
 InpLotMode=1
 InpFixedLots=0.05
 InpRiskPercent=2.0
