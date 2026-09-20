@@ -1,0 +1,16 @@
+; Start tester with deposit 500 USD. Baseline WITHOUT news, not a profitability preset.
+InpAllowRealTrading=false
+InpLotMode=0
+InpFixedLots=0.05
+InpRiskPercent=1.0
+InpDailyLossPercent=3.0
+InpWeeklyLossPercent=6.0
+InpReduceRiskDrawdown=5.0
+InpPauseDrawdown=8.0
+InpHardDrawdown=10.0
+InpMaxLots=0.10
+InpMaxMarginPercent=20.0
+InpRewardRisk=2.0
+InpNewsMode=0
+InpTesterSkipCalendar=true
+InpDiagnostics=true

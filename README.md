@@ -4,20 +4,60 @@ EA eksperimental: tren H1/M15, liquidity sweep M5, konfirmasi struktur dan RSI(8
 
 ## Instalasi
 
+**Pilihan paling mudah (v1.10):** unduh raw `mt5/Standalone/GoldTrendSweep.mq5`, taruh di `MQL5/Experts/`, lalu compile F7. File ini sudah menggabungkan modul risiko, jadi **tidak perlu menyalin `GoldRiskMath.mqh`**. Tetap memerlukan Standard Library `Trade/Trade.mqh` bawaan MT5. Gunakan satu versi EA saja; timpa versi lama dan compile ulang, jangan menjalankan dua instance. Jangan menyimpan halaman HTML GitHub sebagai `.mq5`.
+
+Alternatif versi modular untuk pengembangan:
+
 1. MT5 → **File → Open Data Folder**.
 2. Salin `mt5/Experts/GoldTrendSweep.mq5` ke `MQL5/Experts/`.
 3. Salin `mt5/Include/GoldRiskMath.mqh` ke `MQL5/Include/`.
 4. Buka `.mq5` di MetaEditor, tekan **F7**. Pastikan tidak ada error maupun warning sebelum menguji.
-5. Jalankan dahulu di Strategy Tester, kemudian akun demo. Pasang pada chart **XAUUSD M5**; nama seperti `XAUUSDm` didukung selama mengandung `XAU`.
+5. Jalankan dahulu di Strategy Tester, kemudian akun demo. Gunakan **XAUUSD M5**; nama simbol yang mengandung `XAU` atau `GOLD` didukung tanpa membedakan huruf besar/kecil. Periode chart lain tidak lagi menggagalkan startup, tetapi sinyal internal tetap **M5/M15/H1**, bukan berubah mengikuti chart.
 6. Sesuaikan komisi, jam server, dan mode berita sebelum mengaktifkan Algo Trading. Akun real **diblokir secara default** (`InpAllowRealTrading=false`).
 
 Hanya satu instance untuk kombinasi akun/magic dalam terminal. Jangan menjalankan magic yang sama dari terminal/VPS lain. Gunakan akun khusus EA ini, terutama untuk akun netting: order manual/EA lain bisa mengubah posisi gabungan dan mengacaukan pengukuran risiko. EA menolak entry jika sudah ada posisi/order pada simbol tersebut atau magic yang sama.
+
+## Backtest dengan modal $500 dan pilihan lot
+
+Versi sebelumnya memang menolak startup Strategy Tester jika mode kalender default dipakai. Selain itu, risiko 0,25% pada $500 hanya **$1,25**: banyak setup tidak bisa memenuhi minimum lot 0,01. Ini berbeda dari tidak adanya sinyal; memperbesar lot tidak menyelesaikan startup atau memastikan entry.
+
+1. Compile **versi v1.10** (disarankan standalone di atas). Pilih EA yang baru dikompilasi dalam tester.
+2. Atur **deposit 500, currency USD, XAUUSD, M5**, dan **Every tick based on real ticks**. Gunakan leverage serta spesifikasi simbol broker tujuan, bukan leverage yang dinaikkan hanya agar lolos margin.
+3. Tab **Inputs → Reset**, lalu **Load** salah satu preset di `mt5/Presets/`. Preset hanya mengubah input EA, **tidak mengatur deposit, leverage, atau tanggal tester**. Input lain seperti komisi/jam server masih perlu disesuaikan.
+
+| Preset | Perilaku pada ekuitas awal $500 |
+| --- | --- |
+| `500USD_AutoRisk.set` | Pilihan awal yang lebih konservatif: risiko **1% ($5)**; lot dihitung dari SL dan biaya, maksimal 0,10. Bisa lebih kecil dari 0,05 atau skip jika min lot masih terlalu besar. |
+| `500USD_Fixed005_Capped.set` | Minta tepat **0,05 lot**, tetapi hanya entry jika risiko estimasi SL+biaya **≤2% ($10)** dan sisa budget cukup. |
+| `500USD_Fixed010_Capped.set` | Minta tepat **0,10 lot**, dengan batas risiko yang sama **≤2% ($10)**; lebih sering skip karena kebutuhan risikonya lebih besar. |
+
+Ketiga preset mempertahankan TP2R, BE1R, filter strategi, margin cap 20%, DD reduction/pause/hard 5/8/10%. Batas harian/mingguan preset adalah **3%/6%**, bukan default kode 1%/3%. Tidak ada klaim bahwa preset tersebut sudah menghasilkan entry/profit di tester.
+
+**Fixed lot bukan izin melewati batas risiko.** Mode `LOT_FIXED_CAPPED` tidak diam-diam menurunkan/menaikkan lot: broker min/max/step, budget, atau margin yang tidak cocok membuat setup dilewati dan alasannya dicetak. Setelah DD5%, budget dipotong separuh; fixed lot tetap sama dan hanya lolos jika cocok dengan budget yang lebih kecil. Tidak mempersempit SL struktural untuk memaksakan lot besar.
+
+Contoh **jika kontrak broker 100 oz/lot**: pada SL berjarak $5, 0,05 lot berisiko sekitar **$25 (5%)**, dan 0,10 lot **$50 (10%)**, sebelum biaya. Keduanya ditolak oleh preset capped, bukan bug. Lot besar tersebut tidak konsisten dengan target drawdown rendah jika dipaksakan untuk setiap setup.
+
+### Membaca alasan tidak entry
+
+Dengan `InpDiagnostics=true`, buka tab **Journal** Strategy Tester. EA mencetak konfigurasi awal, status kalender, lalu alasan seperti:
+
+- `Waiting: H1 EMA / M15 ...` → data belum cukup atau tren/struktur belum selaras.
+- `Waiting: no liquidity sweep` / `sweep outside M15 zone` → belum ada setup yang memenuhi aturan.
+- `Skip: ... RSI8`, `... target RR`, `... cost fraction` → setup gagal filter; bukan kegagalan startup.
+- `Skip sizing: budget=..., minimum-lot loss=..., requested-fixed loss=...` → lot tidak sesuai budget/spesifikasi. Angka biaya dalam mata uang akun.
+- `Skip margin` → kebutuhan margin terlalu besar; cek leverage tester dan kontrak broker.
+- `Blocked: ... session/news/drawdown` → batas operasional aktif.
+- `Pending placed` → order berhasil dibuat; **belum berarti terisi**. Retracement harus menyentuh entry sebelum kedaluwarsa.
+- `Place retracement limit failed: ...` → retcode dan deskripsi penolakan broker tercatat.
+
+Jika tidak ada transaksi, kirim baris Journal mulai inisialisasi hingga beberapa alasan skip, nama simbol/broker, tanggal tes, leverage, dan preset. Tanpa log/tick broker, penyebab spesifik kasus pengguna belum dapat dipastikan. Jangan melonggarkan seluruh filter hanya untuk memunculkan trade.
 
 ## Default money management
 
 | Pengaturan | Default dan perilaku |
 | --- | --- |
-| Risiko per transaksi | **0,25% ekuitas**, bukan lot tetap; input dibatasi maksimal 1% |
+| Risiko per transaksi | **0,25% ekuitas**, input dibatasi maksimal 2%; default mode auto risk |
+| Pilihan fixed lot | `InpLotMode=LOT_FIXED_CAPPED`, `InpFixedLots=0.05` (boleh 0.10), tetap dibatasi budget risiko; tidak aktif pada mode auto |
 | Lot | Dibulatkan **turun** menurut volume step broker; jika minimum lot melampaui budget, setup dilewati |
 | Biaya sizing | Estimasi komisi round-trip + cadangan slippage ikut diperhitungkan |
 | Sisa budget | Risiko entry juga dibatasi oleh sisa ruang menuju batas rugi harian, mingguan, dan hard DD |
@@ -75,10 +115,10 @@ Filter ini sengaja ketat dan bisa menghasilkan **sedikit atau tidak ada transaks
 
 Default `NEWS_MT5_CALENDAR` memblokir entry 30 menit sebelum/sesudah berita **USD high impact**. Jika API gagal, EA **fail closed**: tidak membuat entry dan membatalkan pending. Filter tidak menutup posisi yang sudah terbuka hanya karena berita; posisi tetap memakai SL/TP, BE, dan batas waktu. Peristiwa tak terjadwal tidak terdeteksi; pertimbangkan window lebih panjang untuk FOMC.
 
-API kalender MT5 **tidak tersedia dalam Strategy Tester**. Karena itu default akan menolak inisialisasi tester dengan pesan yang jelas, bukan diam-diam mengabaikan berita. Pilih:
+API kalender MT5 **tidak tersedia dalam Strategy Tester**. Mulai v1.10, `InpTesterSkipCalendar=true` memungkinkan startup default sebagai **baseline tester tanpa filter berita**, dengan **WARNING yang selalu dicetak di Journal**. Pengaturan ini hanya memengaruhi `NEWS_MT5_CALENDAR` dalam tester, tidak menonaktifkan kalender pada demo/live dan tidak mengubah mode manual. Hasil baseline tidak setara pengujian dengan jadwal berita. Untuk pengujian berita yang lebih realistis pilih:
 
 1. **`NEWS_MANUAL_TIMES`** dan masukkan jadwal high-impact lengkap sepanjang periode uji, dipisah titik koma, misalnya `2025.01.10 15:30;2025.01.15 15:30`. Contoh ini hanya format, **bukan kalender valid**. Semua timestamp harus sudah dikonversi ke waktu server broker/DST historis. Mode ini tidak memeriksa kelengkapan daftar.
-2. **`NEWS_DISABLED`** hanya untuk baseline eksplisit tanpa filter berita. Jangan menganggap hasilnya setara versi live dengan filter berita aktif.
+2. Set **`InpTesterSkipCalendar=false`** agar mode kalender yang tidak tersedia kembali menggagalkan startup, sehingga tidak sengaja menguji tanpa berita. `NEWS_DISABLED` tetap tersedia untuk baseline eksplisit di semua lingkungan.
 
 Mode manual juga dapat digunakan di demo/live apabila kalender broker tidak tersedia, tetapi jadwal harus selalu diperbarui sendiri.
 
@@ -105,6 +145,16 @@ g++ -std=c++17 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined \
 ```
 
 Meliputi budget risiko, pengurangan risiko, lot step/min/max dengan 4.995 kombinasi sizing, pembulatan harga tick, pemicu 1R buy/sell, buffer BE dan SL yang hanya membaik. **Tes ini bukan kompilasi MQL5, simulator broker, ataupun backtest strategi.**
+
+Tambahan v1.10: tes lot 0,05/0,10 pada budget akun $500, penolakan risiko berlebihan, step tidak valid, dan pengurangan budget; validasi preset serta kesetaraan distribusi standalone:
+
+```sh
+python3 scripts/build_standalone.py
+python3 scripts/build_standalone.py --check
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+Uji manual MT5 yang masih wajib: default tester berhasil init dengan warning tanpa berita; toggle skip false menolak kalender; manual news tetap memblokir sesuai timestamp; input live trading tetap false di demo/real; preset fixed mengirim lot yang diminta hanya jika budget cocok. Mode chart M15 tetap memakai sinyal internal M5, bukan strategi entry M15 terpisah. **Belum diverifikasi melalui MT5 di workspace ini.**
 
 ## Referensi API resmi
 

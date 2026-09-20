@@ -33,6 +33,16 @@ double GoldBudgetWithinLimits(double budget,double equity,double day_floor,doubl
    return MathMax(0.0,MathMin(budget,equity-floor));
 }
 
+double GoldFixedVolume(double requested,double budget,double loss_per_lot,double minimum,double maximum,double step)
+{
+   if(!MathIsValidNumber(requested) || requested<=0) return 0;
+   double allowed=GoldVolume(budget,loss_per_lot,minimum,maximum,step);
+   if(allowed<=0 || requested<minimum-1e-10 || requested>allowed+1e-10) return 0;
+   double normalized=MathFloor(requested/step+0.5)*step;
+   if(MathAbs(normalized-requested)>1e-8 || normalized*loss_per_lot>budget+1e-8) return 0;
+   return normalized;
+}
+
 double GoldPrice(double price,double tick_size,bool round_up)
 {
    if(!MathIsValidNumber(price) || !MathIsValidNumber(tick_size) || tick_size<=0.0) return 0.0;

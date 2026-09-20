@@ -8,6 +8,7 @@ double MathMax(double a,double b) { return std::max(a,b); }
 double MathMin(double a,double b) { return std::min(a,b); }
 double MathFloor(double a) { return std::floor(a); }
 double MathCeil(double a) { return std::ceil(a); }
+double MathAbs(double a) { return std::abs(a); }
 bool MathIsValidNumber(double a) { return std::isfinite(a); }
 #include "../mt5/Include/GoldRiskMath.mqh"
 
@@ -29,8 +30,23 @@ int main()
    assert(near(GoldVolume(10000,100,.01,1,.01),1));
    assert(near(GoldVolume(100,500,.1,1,.1),.2));
    assert(near(GoldVolume(100,0,.01,1,.01),0));
+   // $500 account: exact fixed lots never override the dollar risk cap.
+   assert(near(GoldVolume(1.25,507,.01,1,.01),0));
+   assert(near(GoldVolume(5,207,.01,1,.01),.02));
+   assert(near(GoldFixedVolume(.05,10,107,.01,1,.01),.05));
+   assert(near(GoldFixedVolume(.10,10,87,.01,1,.01),.10));
+   assert(near(GoldFixedVolume(.10,10,107,.01,1,.01),0));
+   assert(near(GoldFixedVolume(.05,10,507,.01,1,.01),0));
+   assert(near(GoldFixedVolume(.055,10,107,.01,1,.01),0));
+   assert(near(GoldFixedVolume(.05,10,107,.10,1,.01),0));
+   assert(near(GoldFixedVolume(.10,10,87,.01,.05,.01),0));
+   assert(near(GoldFixedVolume(.05,5,107,.01,1,.01),0));
+   assert(near(GoldFixedVolume(.05,10,107,.01,1,0),0));
+   assert(near(GoldFixedVolume(1e-11,10,107,0,1,0),0));
    double nan=std::numeric_limits<double>::quiet_NaN();
    double inf=std::numeric_limits<double>::infinity();
+   assert(near(GoldFixedVolume(nan,10,107,.01,1,.01),0));
+   assert(near(GoldFixedVolume(.05,10,107,.01,1,nan),0));
    assert(near(GoldVolume(100,nan,.01,1,.01),0));
    assert(near(GoldVolume(inf,500,.01,1,.01),0));
    assert(near(GoldVolume(100,500,.01,1,0),0));
