@@ -79,5 +79,43 @@ int main()
    assert(near(GoldBreakEven(true,2500,inf,.1,.01,2),0));
    assert(near(GoldPrice(2500.071,.05,true),2500.10));
    assert(near(GoldPrice(2500.071,.05,false),2500.05));
+   // A level behind entry is not an obstacle; an older level ahead still is.
+   assert(GoldTargetHasRoom(true,2500,2510,2498,.2));
+   assert(GoldTargetHasRoom(false,2500,2490,2502,.2));
+   assert(!GoldTargetHasRoom(true,2500,2510,2508,.2));
+   assert(!GoldTargetHasRoom(false,2500,2490,2492,.2));
+   assert(GoldTargetHasRoom(true,2500,2510,2511,.2));
+   assert(GoldTargetHasRoom(false,2500,2490,2489,.2));
+   assert(GoldTargetHasRoom(true,2500,2510,0,.2));
+   assert(!GoldTargetHasRoom(true,2500,2510,2510.2,.2));
+   assert(!GoldTargetHasRoom(false,2500,2490,2489.8,.2));
+   assert(!GoldTargetHasRoom(true,2500,2510,nan,.2));
+   double nearest=0;
+   for(double level : {2498.0,2520.0,2508.0,2515.0})
+      nearest=GoldNearestObstacle(true,2500,level,nearest);
+   assert(near(nearest,2508));
+   assert(!GoldTargetHasRoom(true,2500,2510,nearest,.2));
+   nearest=0;
+   for(double level : {2502.0,2480.0,2492.0,2485.0})
+      nearest=GoldNearestObstacle(false,2500,level,nearest);
+   assert(near(nearest,2492));
+   assert(!GoldTargetHasRoom(false,2500,2490,nearest,.2));
+   // For a 100 oz contract, $0.30 spread + $0.30 reserve + $7 commission per lot.
+   double minimum_risk=GoldMinimumRiskForCosts(30,37,.10,.01);
+   assert(near(minimum_risk,7.07));
+   assert(minimum_risk>GoldRiskBudget(500,.25,0,5));
+   assert(minimum_risk<GoldRiskBudget(500,2,0,5));
+   assert(near(GoldMinimumRiskForCosts(30,37,.10,.05),35.35));
+   assert(GoldMinimumRiskForCosts(30,37,.10,.05)>10);
+   assert(near(GoldMinimumRiskForCosts(30,37,0,.01),0));
+   // A confirmed candidate with an $8 stop passes corrected price/cost/size gates.
+   // This is not a tick replay: broker margin, signal detection and fills are external.
+   assert(GoldTargetHasRoom(true,2500,2516,2498,.30));
+   assert(GoldTargetHasRoom(false,2500,2484,2502,.30));
+   assert((30.0+37.0)/800.0<=.10);
+   double candidate_lots=GoldVolume(GoldRiskBudget(500,2,0,5),837,.01,.1,.01);
+   assert(near(candidate_lots,.01));
+   assert(candidate_lots*837<=10);
+   assert(near(GoldVolume(GoldRiskBudget(500,.25,0,5),837,.01,.1,.01),0));
    std::cout << "Risk math tests passed (including 4,995 lot-sizing cases).\n";
 }

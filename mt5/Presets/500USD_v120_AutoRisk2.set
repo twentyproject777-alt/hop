@@ -1,0 +1,17 @@
+; v1.20 diagnostic baseline. Deposit/currency must be set to 500 USD in tester Settings.
+; Up to 2% risk per trade; not a profit guarantee. Never forces fixed 0.05 or 0.10.
+InpAllowRealTrading=false
+InpLotMode=0
+InpFixedLots=0.05
+InpRiskPercent=2.0
+InpDailyLossPercent=3.0
+InpWeeklyLossPercent=6.0
+InpReduceRiskDrawdown=5.0
+InpPauseDrawdown=8.0
+InpHardDrawdown=10.0
+InpMaxLots=0.10
+InpMaxMarginPercent=20.0
+InpRewardRisk=2.0
+InpNewsMode=0
+InpTesterSkipCalendar=true
+InpDiagnostics=true

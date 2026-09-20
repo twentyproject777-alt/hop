@@ -18,11 +18,20 @@ class DistributionTests(unittest.TestCase):
         self.assertIn("#include <Trade\\Trade.mqh>", output)
         self.assertEqual(output.count("double GoldFixedVolume("), 1)
 
+    def test_primary_expert_has_no_custom_include_dependency(self):
+        source = builder.MAIN.read_text()
+        self.assertEqual(source, builder.render_main())
+        self.assertNotIn("#include <GoldRiskMath.mqh>", source)
+        self.assertEqual(source.count("double GoldFixedVolume("), 1)
+        self.assertEqual(source.count("bool GoldTargetHasRoom("), 1)
+        self.assertIn('#property version   "1.20"', source)
+        self.assertIn("GoldTrendSweep v1.20 initialized", source)
+
     def test_presets_match_declared_inputs_and_limits(self):
         source = (ROOT / "mt5/Experts/GoldTrendSweep.mq5").read_text()
         defaults = dict(re.findall(r"^input\s+\w+\s+(Inp\w+)\s*=([^;]+);", source, re.M))
         files = sorted((ROOT / "mt5/Presets").glob("*.set"))
-        self.assertEqual(len(files), 3)
+        self.assertEqual(len(files), 4)
         for path in files:
             with self.subTest(preset=path.name):
                 values = dict(defaults)

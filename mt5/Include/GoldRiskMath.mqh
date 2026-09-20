@@ -50,6 +50,29 @@ double GoldPrice(double price,double tick_size,bool round_up)
    return (round_up ? MathCeil(units-1e-9) : MathFloor(units+1e-9))*tick_size;
 }
 
+double GoldNearestObstacle(bool buy,double entry,double level,double nearest)
+{
+   if(!MathIsValidNumber(entry) || !MathIsValidNumber(level) || level<=0) return nearest;
+   if(buy ? level<=entry : level>=entry) return nearest;
+   if(nearest<=0 || (buy ? level<nearest : level>nearest)) return level;
+   return nearest;
+}
+
+double GoldMinimumRiskForCosts(double spread_cost,double reserved_cost,double fraction,double lots)
+{
+   if(!MathIsValidNumber(spread_cost) || !MathIsValidNumber(reserved_cost) || !MathIsValidNumber(fraction) ||
+      !MathIsValidNumber(lots) || spread_cost<0 || reserved_cost<0 || fraction<=0 || lots<=0) return 0;
+   return lots*((spread_cost+reserved_cost)/fraction+reserved_cost);
+}
+
+bool GoldTargetHasRoom(bool buy,double entry,double target,double obstacle,double buffer)
+{
+   if(!MathIsValidNumber(entry) || !MathIsValidNumber(target) || !MathIsValidNumber(obstacle) ||
+      !MathIsValidNumber(buffer) || buffer<0 || (buy ? target<=entry : target>=entry)) return false;
+   if(obstacle<=0 || (buy ? obstacle<=entry : obstacle>=entry)) return true;
+   return buy ? obstacle>target+buffer : obstacle<target-buffer;
+}
+
 bool GoldReachedOneR(bool buy,double executable_price,double entry,double initial_risk)
 {
    return MathIsValidNumber(executable_price) && MathIsValidNumber(entry) && MathIsValidNumber(initial_risk) &&

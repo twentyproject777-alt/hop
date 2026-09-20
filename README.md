@@ -4,13 +4,11 @@ EA eksperimental: tren H1/M15, liquidity sweep M5, konfirmasi struktur dan RSI(8
 
 ## Instalasi
 
-**Pilihan paling mudah (v1.10):** unduh raw `mt5/Standalone/GoldTrendSweep.mq5`, taruh di `MQL5/Experts/`, lalu compile F7. File ini sudah menggabungkan modul risiko, jadi **tidak perlu menyalin `GoldRiskMath.mqh`**. Tetap memerlukan Standard Library `Trade/Trade.mqh` bawaan MT5. Gunakan satu versi EA saja; timpa versi lama dan compile ulang, jangan menjalankan dua instance. Jangan menyimpan halaman HTML GitHub sebagai `.mq5`.
-
-Alternatif versi modular untuk pengembangan:
+**v1.20: kedua file `.mq5` di `Experts` dan `Standalone` sudah satu file lengkap**, tidak lagi memerlukan `GoldRiskMath.mqh` di terminal. Tetap memerlukan Standard Library `Trade/Trade.mqh` bawaan MT5. Gunakan satu versi EA saja; timpa versi lama dan compile ulang, jangan menjalankan dua instance. Jangan menyimpan halaman HTML GitHub sebagai `.mq5`.
 
 1. MT5 → **File → Open Data Folder**.
 2. Salin `mt5/Experts/GoldTrendSweep.mq5` ke `MQL5/Experts/`.
-3. Salin `mt5/Include/GoldRiskMath.mqh` ke `MQL5/Include/`.
+3. Tidak perlu menyalin header tambahan. `mt5/Include/GoldRiskMath.mqh` di repository hanya menjadi sumber modul untuk pengembangan dan tes; script build menanamkannya dalam kedua `.mq5`.
 4. Buka `.mq5` di MetaEditor, tekan **F7**. Pastikan tidak ada error maupun warning sebelum menguji.
 5. Jalankan dahulu di Strategy Tester, kemudian akun demo. Gunakan **XAUUSD M5**; nama simbol yang mengandung `XAU` atau `GOLD` didukung tanpa membedakan huruf besar/kecil. Periode chart lain tidak lagi menggagalkan startup, tetapi sinyal internal tetap **M5/M15/H1**, bukan berubah mengikuti chart.
 6. Sesuaikan komisi, jam server, dan mode berita sebelum mengaktifkan Algo Trading. Akun real **diblokir secara default** (`InpAllowRealTrading=false`).
@@ -21,21 +19,36 @@ Hanya satu instance untuk kombinasi akun/magic dalam terminal. Jangan menjalanka
 
 Versi sebelumnya memang menolak startup Strategy Tester jika mode kalender default dipakai. Selain itu, risiko 0,25% pada $500 hanya **$1,25**: banyak setup tidak bisa memenuhi minimum lot 0,01. Ini berbeda dari tidak adanya sinyal; memperbesar lot tidak menyelesaikan startup atau memastikan entry.
 
-1. Compile **versi v1.10** (disarankan standalone di atas). Pilih EA yang baru dikompilasi dalam tester.
+1. Compile **versi v1.20**. Pilih EA yang baru dikompilasi dalam tester. Journal harus menampilkan **`GoldTrendSweep v1.20 initialized. SINGLE-FILE BUILD.`**; jika tidak, jangan menilai hasilnya sebagai versi terbaru.
 2. Atur **deposit 500, currency USD, XAUUSD, M5**, dan **Every tick based on real ticks**. Gunakan leverage serta spesifikasi simbol broker tujuan, bukan leverage yang dinaikkan hanya agar lolos margin.
 3. Tab **Inputs → Reset**, lalu **Load** salah satu preset di `mt5/Presets/`. Preset hanya mengubah input EA, **tidak mengatur deposit, leverage, atau tanggal tester**. Input lain seperti komisi/jam server masih perlu disesuaikan.
 
 | Preset | Perilaku pada ekuitas awal $500 |
 | --- | --- |
+| `500USD_v120_AutoRisk2.set` | Baseline diagnostik terbaru: auto-lot dengan risiko maksimal **2% ($10)**, lot maksimal 0,10. Lebih agresif daripada preset 1%; tetap menolak SL yang terlalu mahal untuk minimum lot broker. |
 | `500USD_AutoRisk.set` | Pilihan awal yang lebih konservatif: risiko **1% ($5)**; lot dihitung dari SL dan biaya, maksimal 0,10. Bisa lebih kecil dari 0,05 atau skip jika min lot masih terlalu besar. |
 | `500USD_Fixed005_Capped.set` | Minta tepat **0,05 lot**, tetapi hanya entry jika risiko estimasi SL+biaya **≤2% ($10)** dan sisa budget cukup. |
 | `500USD_Fixed010_Capped.set` | Minta tepat **0,10 lot**, dengan batas risiko yang sama **≤2% ($10)**; lebih sering skip karena kebutuhan risikonya lebih besar. |
 
-Ketiga preset mempertahankan TP2R, BE1R, filter strategi, margin cap 20%, DD reduction/pause/hard 5/8/10%. Batas harian/mingguan preset adalah **3%/6%**, bukan default kode 1%/3%. Tidak ada klaim bahwa preset tersebut sudah menghasilkan entry/profit di tester.
+Semua preset mempertahankan TP2R, BE1R, filter strategi, margin cap 20%, DD reduction/pause/hard 5/8/10%. Batas harian/mingguan adalah **3%/6%**, juga menjadi default kode v1.20. Risiko default kode kini **2%**, bukan 0,25%; ini perubahan risiko yang nyata, bukan hanya perbaikan teknis. Akun real tetap diblokir. Tidak ada klaim bahwa preset tersebut sudah menghasilkan entry/profit di tester.
 
 **Fixed lot bukan izin melewati batas risiko.** Mode `LOT_FIXED_CAPPED` tidak diam-diam menurunkan/menaikkan lot: broker min/max/step, budget, atau margin yang tidak cocok membuat setup dilewati dan alasannya dicetak. Setelah DD5%, budget dipotong separuh; fixed lot tetap sama dan hanya lolos jika cocok dengan budget yang lebih kecil. Tidak mempersempit SL struktural untuk memaksakan lot besar.
 
 Contoh **jika kontrak broker 100 oz/lot**: pada SL berjarak $5, 0,05 lot berisiko sekitar **$25 (5%)**, dan 0,10 lot **$50 (10%)**, sebelum biaya. Keduanya ditolak oleh preset capped, bukan bug. Lot besar tersebut tidak konsisten dengan target drawdown rendah jika dipaksakan untuk setiap setup.
+
+### Mengapa mengganti lot saja bisa tetap menghasilkan nol order
+
+Filter biaya dan cap risiko harus sama-sama terpenuhi. Contoh **ilustrasi, bukan spesifikasi broker pengguna**: kontrak 100 oz/lot, spread $0,30, cadangan slippage $0,30, komisi $7/lot round-trip. Biaya estimasi per lot = $30+$30+$7=$67. Dengan batas biaya 10% dari risiko harga, risiko harga harus minimal $670/lot; setelah cadangan slippage+komisi, risiko sizing minimal $707/lot. Maka:
+
+- Lot minimum 0,01 membutuhkan budget sedikitnya **$7,07**. Budget lama $1,25, bahkan preset 1% ($5), tidak bisa lolos pada biaya tersebut.
+- Lot 0,05 membutuhkan sedikitnya **$35,35**. Meminta lot lebih besar justru memperparah konflik dengan cap $10.
+- Auto-lot 2% ($10) memungkinkan sebagian setup 0,01 lot, tetapi **bukan jaminan entry**: SL struktural, margin, sinyal, dan quote broker harus tetap memenuhi aturan.
+
+v1.20 mencetak **`GTS COST/RISK CHECK`** dari quote dan spesifikasi broker saat run. Angka ini estimasi batas bawah pada spread saat itu; spread berikutnya atau SL struktural bisa membutuhkan budget lebih besar. Jangan mempersempit SL struktural atau melepas cap risiko untuk menipu pemeriksaan ini.
+
+### Perbaikan filter RR v1.20
+
+Versi sebelumnya membandingkan target terhadap pivot M15 terakhir tanpa mengecek apakah level tersebut masih **di depan entry**. Contoh buy entry 2500, SL2495, TP2510 dan pivot terakhir2498: kode lama menolak, padahal2498 bukan resistance di jalur target. v1.20 mengabaikan level di belakang entry dan mencari pivot terkonfirmasi **terdekat di depan entry** dalam lookback. Jika ada pivot lain2508, trade tetap ditolak; filter ruang RR tidak dihapus. Jika tidak ada penghalang terkonfirmasi di depan dalam lookback, filter RR ini lolos. Ini tidak berarti tidak ada resistance di luar lookback.
 
 ### Membaca alasan tidak entry
 
@@ -50,13 +63,22 @@ Dengan `InpDiagnostics=true`, buka tab **Journal** Strategy Tester. EA mencetak 
 - `Pending placed` → order berhasil dibuat; **belum berarti terisi**. Retracement harus menyentuh entry sebelum kedaluwarsa.
 - `Place retracement limit failed: ...` → retcode dan deskripsi penolakan broker tercatat.
 
+Saat test berakhir (bukan optimasi), Journal juga mencetak ringkasan walaupun `InpDiagnostics=false`:
+
+```text
+GTS v1.20 SUMMARY: evaluated_M5_bars=... aligned=... sweeps=... structure_breaks=... order_attempts=... accepted_pending=... filled_entry_orders=...
+GTS SKIPS: price=... RR=... costs=... sizing=... margin=... expiry=...
+```
+
+`evaluated_M5_bars` menghitung candle yang sampai ke evaluasi strategi setelah gate sesi/berita/risiko, bukan seluruh candle tester. `structure_breaks` masih harus lolos RSI/body. `accepted_pending>0` dengan `filled_entry_orders=0` berarti order dibuat tetapi tidak terisi sebelum dibatalkan/kedaluwarsa; bukan sinyal yang gagal dikirim. Ringkasan dan `GTS COST/RISK CHECK` jauh lebih berguna untuk debugging dibanding laporan profit nol saja. Optimasi non-visual MT5 dapat menekan output `Print`; gunakan satu backtest normal untuk diagnosis.
+
 Jika tidak ada transaksi, kirim baris Journal mulai inisialisasi hingga beberapa alasan skip, nama simbol/broker, tanggal tes, leverage, dan preset. Tanpa log/tick broker, penyebab spesifik kasus pengguna belum dapat dipastikan. Jangan melonggarkan seluruh filter hanya untuk memunculkan trade.
 
 ## Default money management
 
 | Pengaturan | Default dan perilaku |
 | --- | --- |
-| Risiko per transaksi | **0,25% ekuitas**, input dibatasi maksimal 2%; default mode auto risk |
+| Risiko per transaksi | **2% ekuitas** (juga batas input maksimum); default mode auto risk |
 | Pilihan fixed lot | `InpLotMode=LOT_FIXED_CAPPED`, `InpFixedLots=0.05` (boleh 0.10), tetap dibatasi budget risiko; tidak aktif pada mode auto |
 | Lot | Dibulatkan **turun** menurut volume step broker; jika minimum lot melampaui budget, setup dilewati |
 | Biaya sizing | Estimasi komisi round-trip + cadangan slippage ikut diperhitungkan |
@@ -64,17 +86,17 @@ Jika tidak ada transaksi, kirim baris Journal mulai inisialisasi hingga beberapa
 | TP | **2 × jarak entry–SL**, dapat disetel antara 2R–5R; RR harga, bukan RR bersih biaya |
 | Break-even | Saat Bid buy / Ask sell mencapai **1R dari harga fill aktual**, SL dipindah ke entry + buffer biaya untuk buy, entry − buffer biaya untuk sell |
 | BE buffer | Maksimum estimasi komisi round-trip atau 2 × biaya entry tercatat, ditambah swap negatif dan 2 tick ekstra |
-| Kerugian harian | **1%** dari ekuitas awal hari server: batalkan order, tutup posisi EA, kunci sampai hari berikutnya |
-| Kerugian mingguan | **3%** dari ekuitas awal minggu server (Senin): tindakan yang sama, terkunci sampai minggu berikutnya |
-| DD 5% | Risiko per entry dipotong separuh, menjadi **0,125%** |
+| Kerugian harian | **3%** dari ekuitas awal hari server: batalkan order, tutup posisi EA, kunci sampai hari berikutnya |
+| Kerugian mingguan | **6%** dari ekuitas awal minggu server (Senin): tindakan yang sama, terkunci sampai minggu berikutnya |
+| DD 5% | Risiko per entry dipotong separuh, menjadi **1%** dengan input default |
 | DD 8% | **Kunci permanen entry baru**, batalkan pending; posisi berjalan tetap dikelola |
 | DD 10% | Kunci permanen, batalkan pending dan **upayakan menutup posisi EA** |
 | Batas entry | Maksimal **3 order entry terisi/hari**, partial fill order yang sama dihitung sekali |
 | Eksposur | Satu posisi/order; **tanpa martingale, grid, averaging down, atau partial TP** |
-| Margin | Kebutuhan order baru maksimal **20% free margin**; lot juga dibatasi maksimal 1 lot |
+| Margin | Kebutuhan order baru maksimal **20% free margin**; lot juga dibatasi maksimal 0,10 lot |
 | Waktu posisi | Tutup setelah **60 menit** jika belum SL/TP; tidak membiarkan scalp berubah menjadi posisi tanpa batas |
 
-**Contoh:** ekuitas 10.000 → budget risiko 25 dalam mata uang akun. Jika kerugian estimasi per 1 lot termasuk biaya adalah 507 dan volume step 0,01, EA memilih **0,04 lot**, bukan membulatkan ke 0,05.
+**Contoh:** ekuitas $500 dengan risiko 2% → budget $10. Jika kerugian estimasi per 1 lot termasuk biaya adalah $507 dan volume step 0,01, EA memilih **0,01 lot**, bukan membulatkan ke 0,02 (risiko $10,14). Ini contoh sizing terpisah; filter strategi/biaya tetap harus lolos.
 
 SL/TP awal disertakan dalam pending order. SL tidak pernah sengaja diperlebar. Setelah pemicu 1R tercapai, status BE disimpan dan modifikasi dicoba lagi bila broker menolak atau stop/freeze level belum memungkinkan. Harga pemicu menggunakan sisi quote yang dapat dieksekusi, bukan sekadar harga chart. BE di sisi server baru aktif **setelah modifikasi diterima broker**.
 
@@ -98,7 +120,7 @@ Peak equity, baseline harian/mingguan, lock, dan pemicu BE disimpan dalam **Term
 4. Dalam maksimal 3 candle berikutnya, close harus menembus pivot minor berlawanan yang dibekukan pada saat sweep. Candle harus searah tren dan body minimal 0,8 ATR. Setup batal jika ekstrem sweep ditembus lagi atau arah tren berubah.
 5. **RSI8 M5:** buy memerlukan RSI >50 dan meningkat; sell <50 dan menurun. Semua memakai candle tertutup. Bisa dinonaktifkan untuk perbandingan A/B.
 6. Entry limit pada **titik tengah body candle konfirmasi**, bukan midpoint seluruh wick. SL di luar ekstrem sweep + buffer 0,2 ATR. ATR memakai candle sebelum candle sinyal.
-7. TP 2R harus berada sebelum pivot penghalang M15 terakhir dengan buffer spread. Jika ruang tidak cukup, tidak entry.
+7. TP 2R harus berada sebelum pivot penghalang M15 terdekat **di depan entry** dengan buffer spread. Jika ruang tidak cukup, tidak entry; pivot di belakang entry tidak dianggap penghalang.
 8. Pending kedaluwarsa setelah 3 candle M5 di **server broker**. Broker yang tidak mendukung expiration timestamp akan dilewati; tidak diturunkan menjadi GTC yang bisa terisi tanpa pengawasan.
 9. Tidak entry ketika range candle >3 ATR, estimasi spread + komisi + slippage >10% risiko harga, di luar sesi, saat blackout berita, atau guard risiko aktif. Pending juga dibatalkan saat kondisi biaya/risiko tidak lagi memenuhi syarat atau tren berubah.
 
@@ -153,6 +175,8 @@ python3 scripts/build_standalone.py
 python3 scripts/build_standalone.py --check
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
+
+Tambahan v1.20: regression test filter RR buy/sell, level belakang yang tidak boleh memblokir, pivot lebih tua di depan yang tetap harus memblokir, batas buffer target, serta perhitungan konflik biaya/risiko $500. Kedua `.mq5` diperiksa tidak memiliki dependency custom include dan modul tertanamnya identik dengan header yang dites. Pengujian ini belum membuktikan ada fill di data broker pengguna.
 
 Uji manual MT5 yang masih wajib: default tester berhasil init dengan warning tanpa berita; toggle skip false menolak kalender; manual news tetap memblokir sesuai timestamp; input live trading tetap false di demo/real; preset fixed mengirim lot yang diminta hanya jika budget cocok. Mode chart M15 tetap memakai sinyal internal M5, bukan strategi entry M15 terpisah. **Belum diverifikasi melalui MT5 di workspace ini.**
 
