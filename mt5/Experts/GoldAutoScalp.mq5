@@ -1,6 +1,6 @@
 #property strict
-#property version "2.00"
-#property description "No-preset XAU trend-pullback RSI8. Market entries, ATR SL, TP2R, BE1R."
+#property version "2.10"
+#property description "No-preset XAU trend continuation RSI8. EMA9 pullbacks/breakouts, TP2R, BE1R."
 #include <Trade\Trade.mqh>
 // BEGIN GENERATED GAS CORE: edit Include modules, then run scripts/build_auto_scalp.py
 #ifndef GOLD_RISK_MATH_MQH
@@ -108,6 +108,8 @@ struct GASBars
 {
    double trend_close,trend_fast,trend_slow;
    double open,high,low,close,previous_close,ema,previous_ema,rsi,previous_rsi,atr;
+   double trend_previous_fast,trend_atr,fast_ema,previous_fast_ema;
+   double previous_high,previous_low,breakout_high,breakout_low;
 };
 
 struct GASQuote
@@ -115,15 +117,20 @@ struct GASQuote
    double bid,ask,tick_size,minimum_stop,minimum_lot,maximum_lot,lot_step,free_margin;
 };
 
+enum GASSetup { GAS_SETUP_NONE=0,GAS_SETUP_PULLBACK,GAS_SETUP_BREAKOUT };
+
 struct GASPlan
 {
    int direction;
+   GASSetup setup;
+   bool minimum_lot_bridge;
    double entry,stop,target,lots,estimated_loss,estimated_margin;
 };
 
 enum GASResult
 {
-   GAS_NO_SIGNAL=0,GAS_BAD_DATA,GAS_SPREAD,GAS_RISK,GAS_MARGIN,GAS_NOT_ALLOWED,GAS_REJECTED,GAS_SENT
+   GAS_NO_SIGNAL=0,GAS_BAD_DATA,GAS_SPREAD,GAS_RISK,GAS_MARGIN,GAS_NOT_ALLOWED,GAS_REJECTED,GAS_SENT,
+   GAS_NO_TREND,GAS_QUALITY,GAS_ENTRY_MOVED,GAS_READY,GAS_WIDE_STOP
 };
 
 class GASExecution
@@ -141,28 +148,59 @@ bool GASValidBars(const GASBars &b)
       MathIsValidNumber(b.open) && MathIsValidNumber(b.high) && MathIsValidNumber(b.low) && MathIsValidNumber(b.close) &&
       MathIsValidNumber(b.previous_close) && MathIsValidNumber(b.ema) && MathIsValidNumber(b.previous_ema) &&
       MathIsValidNumber(b.rsi) && MathIsValidNumber(b.previous_rsi) && MathIsValidNumber(b.atr) &&
+      MathIsValidNumber(b.trend_previous_fast) && MathIsValidNumber(b.trend_atr) &&
+      MathIsValidNumber(b.fast_ema) && MathIsValidNumber(b.previous_fast_ema) &&
+      MathIsValidNumber(b.previous_high) && MathIsValidNumber(b.previous_low) &&
+      MathIsValidNumber(b.breakout_high) && MathIsValidNumber(b.breakout_low) &&
       b.trend_close>0 && b.trend_fast>0 && b.trend_slow>0 && b.low>0 && b.high>=b.low &&
       b.open>=b.low && b.open<=b.high && b.close>=b.low && b.close<=b.high &&
       b.previous_close>0 && b.ema>0 && b.previous_ema>0 && b.atr>0 &&
-      b.rsi>=0 && b.rsi<=100 && b.previous_rsi>=0 && b.previous_rsi<=100;
+      b.rsi>=0 && b.rsi<=100 && b.previous_rsi>=0 && b.previous_rsi<=100 &&
+      b.trend_previous_fast>0 && b.trend_atr>0 && b.fast_ema>0 && b.previous_fast_ema>0 &&
+      b.previous_low>0 && b.previous_high>=b.previous_close && b.previous_low<=b.previous_close &&
+      b.breakout_high>=b.previous_high && b.breakout_low<=b.previous_low && b.breakout_low>0;
 }
 
-int GASDirection(const GASBars &b)
+int GASTrendDirection(const GASBars &b)
 {
    if(!GASValidBars(b)) return 0;
-   bool buy_bias=b.trend_fast>b.trend_slow && b.trend_close>b.trend_slow;
-   bool sell_bias=b.trend_fast<b.trend_slow && b.trend_close<b.trend_slow;
-   bool buy_pullback=b.low<=b.ema || b.previous_close<=b.previous_ema || b.previous_rsi<=50;
-   bool sell_pullback=b.high>=b.ema || b.previous_close>=b.previous_ema || b.previous_rsi>=50;
-   if(buy_bias && buy_pullback && b.close>b.open && b.close>b.ema && b.rsi>50 && b.rsi>b.previous_rsi) return 1;
-   if(sell_bias && sell_pullback && b.close<b.open && b.close<b.ema && b.rsi<50 && b.rsi<b.previous_rsi) return -1;
+   if(MathAbs(b.trend_fast-b.trend_slow)<.15*b.trend_atr) return 0;
+   if(b.trend_fast>b.trend_slow && b.trend_close>b.trend_fast && b.trend_fast>b.trend_previous_fast) return 1;
+   if(b.trend_fast<b.trend_slow && b.trend_close<b.trend_fast && b.trend_fast<b.trend_previous_fast) return -1;
    return 0;
+}
+
+GASResult GASSignal(const GASBars &b,int &direction,GASSetup &setup)
+{
+   direction=0; setup=GAS_SETUP_NONE;
+   if(!GASValidBars(b)) return GAS_BAD_DATA;
+   int trend=GASTrendDirection(b);
+   if(trend==0) return GAS_NO_TREND;
+   bool buy=trend>0;
+   bool aligned=buy ? b.fast_ema>b.ema && b.close>b.fast_ema && b.close>b.open && b.rsi>50 && b.rsi>b.previous_rsi
+                    : b.fast_ema<b.ema && b.close<b.fast_ema && b.close<b.open && b.rsi<50 && b.rsi<b.previous_rsi;
+   if(!aligned) return GAS_NO_SIGNAL;
+   if(MathAbs(b.close-b.fast_ema)>b.atr || b.high-b.low>2.5*b.atr ||
+      (buy ? b.rsi>75 : b.rsi<25)) return GAS_QUALITY;
+   bool pullback=buy ? b.low<=b.fast_ema+.1*b.atr || b.previous_close<=b.previous_fast_ema
+                    : b.high>=b.fast_ema-.1*b.atr || b.previous_close>=b.previous_fast_ema;
+   bool breakout=buy ? b.close>b.breakout_high : b.close<b.breakout_low;
+   if(!pullback && !breakout) return GAS_NO_SIGNAL;
+   direction=trend;
+   setup=pullback ? GAS_SETUP_PULLBACK : GAS_SETUP_BREAKOUT;
+   return GAS_READY;
+}
+
+bool GASDailyEntryAllowed(int filled,int maximum)
+{
+   return filled>=0 && maximum>0 && maximum<=12 && filled<maximum;
 }
 
 GASResult GASProcess(const GASBars &bars,const GASQuote &q,double budget,double max_lots,double rr,
                      double stop_atr,double max_spread_atr,double margin_fraction,GASExecution &broker,GASPlan &plan)
 {
    plan.direction=0; plan.entry=0; plan.stop=0; plan.target=0; plan.lots=0; plan.estimated_loss=0; plan.estimated_margin=0;
+   plan.setup=GAS_SETUP_NONE; plan.minimum_lot_bridge=false;
    if(!GASValidBars(bars) || !MathIsValidNumber(q.bid) || !MathIsValidNumber(q.ask) ||
       !MathIsValidNumber(q.tick_size) || !MathIsValidNumber(q.minimum_stop) || !MathIsValidNumber(q.minimum_lot) ||
       !MathIsValidNumber(q.maximum_lot) || !MathIsValidNumber(q.lot_step) || !MathIsValidNumber(q.free_margin) ||
@@ -171,22 +209,31 @@ GASResult GASProcess(const GASBars &bars,const GASQuote &q,double budget,double 
       q.bid<=0 || q.ask<q.bid || q.tick_size<=0 || q.minimum_stop<0 || q.minimum_lot<=0 ||
       q.maximum_lot<q.minimum_lot || q.lot_step<=0 || max_lots<=0 || rr<2 || stop_atr<=0 ||
       max_spread_atr<=0 || margin_fraction<=0 || margin_fraction>1) return GAS_BAD_DATA;
-   plan.direction=GASDirection(bars);
-   if(plan.direction==0) return GAS_NO_SIGNAL;
+   GASResult signal=GASSignal(bars,plan.direction,plan.setup);
+   if(signal!=GAS_READY) return signal;
    if(q.ask-q.bid>bars.atr*max_spread_atr) return GAS_SPREAD;
    if(budget<=0) return GAS_RISK;
    bool buy=plan.direction>0;
+   if(MathAbs(q.bid-bars.close)>.25*bars.atr || (buy ? q.bid<=bars.fast_ema : q.bid>=bars.fast_ema)) return GAS_ENTRY_MOVED;
    if(!broker.Allowed(buy)) return GAS_NOT_ALLOWED;
    plan.entry=buy ? q.ask : q.bid;
    double distance=MathMax(bars.atr*stop_atr,q.minimum_stop+q.tick_size);
    plan.stop=GoldPrice((buy ? q.bid : q.ask)+(buy ? -distance : distance),q.tick_size,!buy);
+   double structural_stop=buy ? MathMin(bars.low,bars.previous_low)-.1*bars.atr
+                              : MathMax(bars.high,bars.previous_high)+(q.ask-q.bid)+.1*bars.atr;
+   plan.stop=GoldPrice(buy ? MathMin(plan.stop,structural_stop) : MathMax(plan.stop,structural_stop),q.tick_size,!buy);
    if(plan.stop<=0) return GAS_BAD_DATA;
    double risk=buy ? plan.entry-plan.stop : plan.stop-plan.entry;
+   if(risk-(q.ask-q.bid)>3*bars.atr+q.tick_size) return GAS_WIDE_STOP;
    plan.target=GoldPrice(plan.entry+(buy ? 1 : -1)*rr*risk,q.tick_size,buy);
    if(risk<=0 || plan.target<=0) return GAS_BAD_DATA;
    double loss=broker.LossPerLot(buy,plan.entry,plan.stop);
    if(!MathIsValidNumber(loss) || loss<=0) return GAS_BAD_DATA;
-   double risk_lots=GoldVolume(budget,loss,q.minimum_lot,MathMin(max_lots,q.maximum_lot),q.lot_step);
+   double cap=MathMin(max_lots,q.maximum_lot);
+   double risk_lots=GoldVolume(.5*budget,loss,q.minimum_lot,cap,q.lot_step);
+   // Only the broker minimum may exceed the preferred half-budget, never the hard budget.
+   if(risk_lots<=0 && GoldFixedVolume(q.minimum_lot,budget,loss,q.minimum_lot,cap,q.lot_step)>0)
+   { risk_lots=q.minimum_lot; plan.minimum_lot_bridge=true; }
    plan.estimated_loss=q.minimum_lot*loss;
    if(risk_lots<=0) return GAS_RISK;
    double margin=broker.MarginPerLot(buy,plan.entry);
@@ -211,10 +258,12 @@ input double InpMaxSpreadATR=0.25;
 input double InpCommissionPerLotRoundTurn=7.0;
 input int InpSlippagePoints=30;
 input bool InpLiveNewsFilter=true;
+input int InpMaxEntriesPerDay=12;
 
 const ulong MAGIC=26092002;
 CTrade manager;
 int fast15=INVALID_HANDLE,slow15=INVALID_HANDLE,ema5=INVALID_HANDLE,atr5=INVALID_HANDLE,rsi5=INVALID_HANDLE;
+int atr15=INVALID_HANDLE,fast5=INVALID_HANDLE;
 string prefix,lock_key,last_note="";
 double lock_token=0;
 bool lock_owned=false;
@@ -222,6 +271,9 @@ datetime last_bar=0,note_bar=0,news_checked=0,run_start=0;
 bool news_blocked=true;
 ulong evaluated=0,signals=0,sent_orders=0,filled_deals=0;
 ulong rejected=0,risk_skips=0,margin_skips=0,spread_skips=0,data_skips=0;
+ulong trend_skips=0,quality_skips=0,moved_skips=0,wide_stop_skips=0,no_signal=0,permission_skips=0;
+ulong pullback_signals=0,breakout_signals=0,minimum_lot_entries=0;
+ulong loss_lock_bars=0,pause_bars=0,daily_cap_bars=0,exposure_bars=0,request_bars=0,news_bars=0;
 
 string K(string name) { return prefix+name; }
 double Read(string name) { return GlobalVariableCheck(K(name)) ? GlobalVariableGet(K(name)) : 0; }
@@ -398,13 +450,19 @@ bool Value(int handle,int shift,double &value)
 
 bool LoadBars(GASBars &b)
 {
-   if(BarsCalculated(slow15)<52 || BarsCalculated(ema5)<22 || BarsCalculated(atr5)<16 || BarsCalculated(rsi5)<10) return false;
+   if(BarsCalculated(slow15)<55 || BarsCalculated(fast15)<25 || BarsCalculated(atr15)<16 ||
+      BarsCalculated(ema5)<22 || BarsCalculated(fast5)<11 || BarsCalculated(atr5)<16 || BarsCalculated(rsi5)<10) return false;
    MqlRates rates[];
    ArraySetAsSeries(rates,true);
-   if(CopyRates(_Symbol,PERIOD_M5,0,3,rates)!=3) return false;
+   if(CopyRates(_Symbol,PERIOD_M5,0,5,rates)!=5) return false;
    b.open=rates[1].open; b.high=rates[1].high; b.low=rates[1].low; b.close=rates[1].close; b.previous_close=rates[2].close;
+   b.previous_high=rates[2].high; b.previous_low=rates[2].low;
+   b.breakout_high=MathMax(rates[2].high,MathMax(rates[3].high,rates[4].high));
+   b.breakout_low=MathMin(rates[2].low,MathMin(rates[3].low,rates[4].low));
    b.trend_close=iClose(_Symbol,PERIOD_M15,1);
    return Value(fast15,1,b.trend_fast) && Value(slow15,1,b.trend_slow) && Value(ema5,1,b.ema) && Value(ema5,2,b.previous_ema) &&
+      Value(fast15,4,b.trend_previous_fast) && Value(atr15,1,b.trend_atr) &&
+      Value(fast5,1,b.fast_ema) && Value(fast5,2,b.previous_fast_ema) &&
       Value(atr5,1,b.atr) && Value(rsi5,1,b.rsi) && Value(rsi5,2,b.previous_rsi) && GASValidBars(b);
 }
 
@@ -442,7 +500,7 @@ public:
       request.volume=NormalizeDouble(lots,8); request.price=NormalizeDouble(entry,_Digits);
       if(SymbolInfoInteger(_Symbol,SYMBOL_TRADE_EXEMODE)==SYMBOL_TRADE_EXECUTION_MARKET) request.price=0;
       request.sl=NormalizeDouble(stop,_Digits); request.tp=NormalizeDouble(target,_Digits);
-      request.deviation=InpSlippagePoints; request.comment="GoldAutoScalp 2.00";
+      request.deviation=InpSlippagePoints; request.comment="GoldAutoScalp 2.10";
       long filling=SymbolInfoInteger(_Symbol,SYMBOL_FILLING_MODE);
       if((filling & SYMBOL_FILLING_FOK)!=0) request.type_filling=ORDER_FILLING_FOK;
       else if((filling & SYMBOL_FILLING_IOC)!=0) request.type_filling=ORDER_FILLING_IOC;
@@ -552,25 +610,25 @@ void ManagePositions(MqlTick &tick)
 
 void Run(bool allow_entry)
 {
-   if(!RiskState()) { Note("Account equity/time/connection not ready; risk baseline unchanged."); return; }
-   if(!OperationsAllowed()) { Note("Trading permissions/connection unavailable; cannot send or modify orders."); return; }
+   datetime bar=iTime(_Symbol,PERIOD_M5,0);
+   bool new_bar=allow_entry && bar>0 && bar!=last_bar;
+   if(new_bar) { last_bar=bar; evaluated++; }
+   if(!RiskState()) { if(new_bar) data_skips++; Note("Account equity/time/connection not ready; risk baseline unchanged."); return; }
+   if(!OperationsAllowed()) { if(new_bar) permission_skips++; Note("Trading permissions/connection unavailable; cannot send or modify orders."); return; }
    if(Read("dayLock")>0 || Read("weekLock")>0 || Read("hard")>0)
-   { CloseOwnPositions(); Note("Daily/weekly/hard drawdown lock active."); return; }
+   { if(new_bar) loss_lock_bars++; CloseOwnPositions(); Note("Daily/weekly/hard drawdown lock active."); return; }
    MqlTick tick;
    if(!SymbolInfoTick(_Symbol,tick) || !MathIsValidNumber(tick.bid) || !MathIsValidNumber(tick.ask) ||
-      tick.bid<=0 || tick.ask<tick.bid || TimeCurrent()-tick.time>30) return;
+      tick.bid<=0 || tick.ask<tick.bid || TimeCurrent()-tick.time>30) { if(new_bar) data_skips++; return; }
    ManagePositions(tick);
-   if(!allow_entry) return;
-   datetime bar=iTime(_Symbol,PERIOD_M5,0);
-   if(bar==0 || bar==last_bar) return;
-   last_bar=bar;
-   evaluated++;
-   if(Read("pause")>0) { Note("DD8% pause; review required before reset."); return; }
-   if(!RequestSettled()) { Note("Previous market request unconfirmed; no duplicate entry. Check broker history before resetting awaitRequest."); return; }
-   if(Exposure()) { Note("Existing symbol/magic exposure; no additional position."); return; }
+   if(!new_bar) return;
+   if(Read("pause")>0) { pause_bars++; Note("DD8% pause; review required before reset."); return; }
+   if(!RequestSettled()) { request_bars++; Note("Previous market request unconfirmed; no duplicate entry. Check broker history before resetting awaitRequest."); return; }
+   if(Exposure()) { exposure_bars++; Note("Existing symbol/magic exposure; no additional position."); return; }
    int entries=EntryOrders((datetime)Read("day"));
-   if(entries<0 || entries>=3) { Note("Daily filled-entry cap reached or trade history unavailable."); return; }
-   if(NewsBlock()) { Note("Live USD news blackout."); return; }
+   if(entries<0) { data_skips++; Note("Trade history unavailable."); return; }
+   if(!GASDailyEntryAllowed(entries,InpMaxEntriesPerDay)) { daily_cap_bars++; Note("Daily filled-entry cap reached."); return; }
+   if(NewsBlock()) { news_bars++; Note("Live USD news blackout."); return; }
    GASBars bars;
    if(!LoadBars(bars)) { data_skips++; Note("Waiting for M5/M15 history (EMA50 warmup)."); return; }
    GASQuote q;
@@ -582,21 +640,31 @@ void Run(bool allow_entry)
    double budget=Budget();
    GASResult result=GASProcess(bars,q,budget,InpMaxLots,InpRewardRisk,InpStopATR,InpMaxSpreadATR,.25,broker,plan);
    if(plan.direction!=0) signals++;
+   if(plan.setup==GAS_SETUP_PULLBACK) pullback_signals++;
+   if(plan.setup==GAS_SETUP_BREAKOUT) breakout_signals++;
    if(result==GAS_SENT) sent_orders++;
+   if(result==GAS_SENT && plan.minimum_lot_bridge) minimum_lot_entries++;
    if(result==GAS_REJECTED) rejected++;
    if(result==GAS_RISK) risk_skips++;
    if(result==GAS_MARGIN) margin_skips++;
    if(result==GAS_SPREAD) spread_skips++;
    if(result==GAS_BAD_DATA) data_skips++;
-   Note(StringFormat("%s: side=%d lot=%.4f SL=%.5f TP=%.5f risk_estimate=%.2f budget=%.2f (risk skip shows minimum-lot loss).",
-      EnumToString(result),plan.direction,plan.lots,plan.stop,plan.target,plan.estimated_loss,budget));
+   if(result==GAS_NO_TREND) trend_skips++;
+   if(result==GAS_QUALITY) quality_skips++;
+   if(result==GAS_ENTRY_MOVED) moved_skips++;
+   if(result==GAS_WIDE_STOP) wide_stop_skips++;
+   if(result==GAS_NO_SIGNAL) no_signal++;
+   if(result==GAS_NOT_ALLOWED) permission_skips++;
+   Note(StringFormat("%s: setup=%s side=%d lot=%.4f SL=%.5f TP=%.5f risk_estimate=%.2f preferred=%.2f cap=%.2f minlot_bridge=%s (risk skip shows minimum-lot loss).",
+      EnumToString(result),EnumToString(plan.setup),plan.direction,plan.lots,plan.stop,plan.target,plan.estimated_loss,.5*budget,budget,
+      plan.minimum_lot_bridge ? "true" : "false"));
 }
 
 int OnInit()
 {
    if(InpRiskPercent<=0 || InpRiskPercent>2 || InpMaxLots<=0 || InpRewardRisk<2 || InpRewardRisk>5 ||
       InpStopATR<.5 || InpStopATR>3 || InpMaxSpreadATR<=0 || InpMaxSpreadATR>.5 ||
-      InpCommissionPerLotRoundTurn<0 || InpSlippagePoints<0) return INIT_PARAMETERS_INCORRECT;
+      InpCommissionPerLotRoundTurn<0 || InpSlippagePoints<0 || !GASDailyEntryAllowed(0,InpMaxEntriesPerDay)) return INIT_PARAMETERS_INCORRECT;
    string name=_Symbol; StringToUpper(name);
    if(StringFind(name,"XAU")<0 && StringFind(name,"GOLD")<0)
    { Print("GoldAutoScalp requires an XAU/GOLD symbol."); return INIT_PARAMETERS_INCORRECT; }
@@ -612,13 +680,15 @@ int OnInit()
    lock_owned=true;
    fast15=iMA(_Symbol,PERIOD_M15,20,0,MODE_EMA,PRICE_CLOSE); slow15=iMA(_Symbol,PERIOD_M15,50,0,MODE_EMA,PRICE_CLOSE);
    ema5=iMA(_Symbol,PERIOD_M5,20,0,MODE_EMA,PRICE_CLOSE); atr5=iATR(_Symbol,PERIOD_M5,14); rsi5=iRSI(_Symbol,PERIOD_M5,8,PRICE_CLOSE);
-   if(fast15==INVALID_HANDLE || slow15==INVALID_HANDLE || ema5==INVALID_HANDLE || atr5==INVALID_HANDLE || rsi5==INVALID_HANDLE) return INIT_FAILED;
+   fast5=iMA(_Symbol,PERIOD_M5,9,0,MODE_EMA,PRICE_CLOSE); atr15=iATR(_Symbol,PERIOD_M15,14);
+   if(fast15==INVALID_HANDLE || slow15==INVALID_HANDLE || ema5==INVALID_HANDLE || atr5==INVALID_HANDLE || rsi5==INVALID_HANDLE ||
+      fast5==INVALID_HANDLE || atr15==INVALID_HANDLE) return INIT_FAILED;
    manager.SetExpertMagicNumber(MAGIC); manager.SetTypeFillingBySymbol(_Symbol); manager.SetDeviationInPoints(InpSlippagePoints); manager.SetAsyncMode(false);
    RiskState(); run_start=TimeCurrent(); last_bar=iTime(_Symbol,PERIOD_M5,0);
    if(!EventSetTimer(5)) return INIT_FAILED;
-   Print("GoldAutoScalp v2.00 READY — NO PRESET REQUIRED. M15 EMA20/50, M5 pullback/RSI8, MARKET orders, ATR stop, TP2R+, BE1R.");
-   PrintFormat("GAS2 equity=%.2f %s risk=%.2f%% minlot=%.4f step=%.4f contract=%.2f; no fixed-hour gate, no swing/RR-obstacle veto.",
-      AccountInfoDouble(ACCOUNT_EQUITY),AccountInfoString(ACCOUNT_CURRENCY),InpRiskPercent,SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),
+   Print("GoldAutoScalp v2.10 READY — NO PRESET REQUIRED. M15 EMA20/50+slope, M5 EMA9/20 pullback/breakout RSI8, structural/ATR stop, TP2R+, BE1R.");
+   PrintFormat("GAS2 equity=%.2f %s risk_preferred=%.2f%% risk_cap=%.2f%% max_entries_day=%d minlot=%.4f step=%.4f contract=%.2f; minimum-lot bridge cannot exceed risk cap.",
+      AccountInfoDouble(ACCOUNT_EQUITY),AccountInfoString(ACCOUNT_CURRENCY),.5*InpRiskPercent,InpRiskPercent,InpMaxEntriesPerDay,SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),
       SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),SymbolInfoDouble(_Symbol,SYMBOL_TRADE_CONTRACT_SIZE));
    if(MQLInfoInteger(MQL_TESTER)) Print("WARNING: tester baseline has NO NEWS FILTER; live/demo uses USD calendar unless explicitly disabled.");
    return INIT_SUCCEEDED;
@@ -633,6 +703,21 @@ void OnDeinit(const int reason)
    {
       PrintFormat("GAS2 SUMMARY: bars=%I64u signals=%I64u sent_orders=%I64u response_deals=%I64u filled_entry_orders=%d rejected=%I64u risk_skips=%I64u margin_skips=%I64u spread_skips=%I64u data_skips=%I64u",
          evaluated,signals,sent_orders,filled_deals,EntryOrders(run_start),rejected,risk_skips,margin_skips,spread_skips,data_skips);
+      PrintFormat("GAS2 SIGNALS: pullback=%I64u breakout=%I64u no_trend=%I64u no_setup=%I64u quality=%I64u quote_moved=%I64u wide_stop=%I64u minlot_entries=%I64u",
+         pullback_signals,breakout_signals,trend_skips,no_signal,quality_skips,moved_skips,wide_stop_skips,minimum_lot_entries);
+      PrintFormat("GAS2 BLOCKS: loss_lock=%I64u DD_pause=%I64u daily_cap=%I64u exposure=%I64u unconfirmed_request=%I64u news=%I64u permission=%I64u",
+         loss_lock_bars,pause_bars,daily_cap_bars,exposure_bars,request_bars,news_bars,permission_skips);
+      PrintFormat("GAS2 RISK STATE: peak=%.2f equity=%.2f DD=%.2f%% day_lock=%.0f week_lock=%.0f DD_pause=%.0f hard_lock=%.0f",
+         Read("peak"),AccountInfoDouble(ACCOUNT_EQUITY),GoldDrawdownPct(Read("peak"),AccountInfoDouble(ACCOUNT_EQUITY)),
+         Read("dayLock"),Read("weekLock"),Read("pause"),Read("hard"));
+      if(MQLInfoInteger(MQL_TESTER) && reason!=REASON_INITFAILED)
+      {
+         int total=(int)TesterStatistics(STAT_TRADES),wins=(int)TesterStatistics(STAT_PROFIT_TRADES);
+         double winrate=total>0 ? 100.0*wins/total : 0;
+         string pf=TesterStatistics(STAT_GROSS_LOSS)<0 ? DoubleToString(TesterStatistics(STAT_PROFIT_FACTOR),2) : "n/a (no losing trades)";
+         PrintFormat("GAS2 TESTER: trades=%d wins=%d losses=%d winrate=%.2f%% net=%.2f PF=%s max_equity_DD=%.2f%%. Historical result, not a guarantee.",
+            total,wins,(int)TesterStatistics(STAT_LOSS_TRADES),winrate,TesterStatistics(STAT_PROFIT),pf,TesterStatistics(STAT_EQUITY_DDREL_PERCENT));
+      }
       GlobalVariableSetOnCondition(lock_key,0,lock_token); GlobalVariablesFlush();
    }
    if(fast15!=INVALID_HANDLE) IndicatorRelease(fast15);
@@ -640,4 +725,6 @@ void OnDeinit(const int reason)
    if(ema5!=INVALID_HANDLE) IndicatorRelease(ema5);
    if(atr5!=INVALID_HANDLE) IndicatorRelease(atr5);
    if(rsi5!=INVALID_HANDLE) IndicatorRelease(rsi5);
+   if(fast5!=INVALID_HANDLE) IndicatorRelease(fast5);
+   if(atr15!=INVALID_HANDLE) IndicatorRelease(atr15);
 }
